@@ -367,6 +367,54 @@ class curl {
     }
 
     /**
+     * Recursive function formating an array in POST parameter
+     * @param array $arraydata - the array that we are going to format and add into &$data array
+     * @param string $currentdata - a row of the final postdata array at instant T
+     *                when finish, it's assign to $data under this format: name[keyname][][]...[]='value'
+     * @param array $data - the final data array containing all POST parameters : 1 row = 1 parameter
+     */
+    function format_array_postdata_for_curlcall($arraydata, $currentdata, &$data) {
+        foreach ($arraydata as $k=>$v) {
+            $newcurrentdata = $currentdata;
+            if (is_object($v)) {
+                $v = (array) $v;
+            }
+            if (is_array($v)) { //the value is an array, call the function recursively
+                $newcurrentdata = $newcurrentdata.'['.urlencode($k).']';
+                $this->format_array_postdata_for_curlcall($v, $newcurrentdata, $data);
+            }  else { //add the POST parameter to the $data array
+                $data[] = $newcurrentdata.'['.urlencode($k).']='.urlencode($v);
+            }
+        }
+    }
+
+    /**
+     * Transform a PHP array into POST parameter
+     * (see the recursive function format_array_postdata_for_curlcall)
+     * @param array $postdata
+     * @return array containing all POST parameters  (1 row = 1 POST parameter)
+     */
+    function format_postdata_for_curlcall($postdata) {
+        if (is_object($postdata)) {
+            $postdata = (array) $postdata;
+        }
+        $data = array();
+        foreach ($postdata as $k=>$v) {
+            if (is_object($v)) {
+                $v = (array) $v;
+            }
+            if (is_array($v)) {
+                $currentdata = urlencode($k);
+                $this->format_array_postdata_for_curlcall($v, $currentdata, $data);
+            }  else {
+                $data[] = urlencode($k).'='.urlencode($v);
+            }
+        }
+        $convertedpostdata = implode('&', $data);
+        return $convertedpostdata;
+    }
+
+    /**
      * HTTP POST method
      *
      * @param string $url
@@ -377,20 +425,9 @@ class curl {
     public function post($url, $params = '', $options = array()){
         $options['CURLOPT_POST']       = 1;
         if (is_array($params)) {
-            $this->_tmp_file_post_params = array();
-            foreach ($params as $key => $value) {
-                if ($value instanceof stored_file) {
-                    $value->add_to_curl_request($this, $key);
-                } else {
-                    $this->_tmp_file_post_params[$key] = $value;
-                }
-            }
-            $options['CURLOPT_POSTFIELDS'] = $this->_tmp_file_post_params;
-            unset($this->_tmp_file_post_params);
-        } else {
-            // $params is the raw post data
-            $options['CURLOPT_POSTFIELDS'] = $params;
+            $params = $this->format_postdata_for_curlcall($params);
         }
+        $options['CURLOPT_POSTFIELDS'] = $params;
         return $this->request($url, $options);
     }
 
