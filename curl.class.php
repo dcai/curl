@@ -20,7 +20,7 @@
  * $html = $c->put('http://example.com/', array('file'=>'/var/www/test.txt');
  * </code>
  *
- * @author     Dongsheng Cai <dongsheng@moodle.com>
+ * @copyright  Dongsheng Cai {@see http://dongsheng.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
 
@@ -77,7 +77,7 @@ class curl {
      */
     public function resetopt(){
         $this->options = array();
-        $this->options['CURLOPT_USERAGENT']         = 'MoodleBot/1.0';
+        $this->options['CURLOPT_USERAGENT']         = 'cURL';
         // True to include the header in the output
         $this->options['CURLOPT_HEADER']            = 0;
         // True to Exclude the body from the output
