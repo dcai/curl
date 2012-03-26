@@ -30,7 +30,7 @@ class curl {
     public  $proxy    = false;
     /** @var array */
     public  $response = array();
-    public  $header   = array();
+    public  $headers  = array();
     /** @var string */
     public  $info;
     public  $error;
@@ -50,12 +50,10 @@ class curl {
      */
     public function __construct($options = array()){
         if (!function_exists('curl_init')) {
-            $this->error = 'cURL module must be enabled!';
-            trigger_error($this->error, E_USER_ERROR);
-            return false;
+            throw new Exception('cURL module must be enabled!');
         }
         // the options of curl should be init here.
-        $this->resetopt();
+        $this->initialize_default_options();
         if (!empty($options['debug'])) {
             $this->debug = true;
         }
@@ -75,7 +73,7 @@ class curl {
     /**
      * Resets the CURL options that have already been set
      */
-    public function resetopt(){
+    private function initialize_default_options(){
         $this->options = array();
         $this->options['CURLOPT_USERAGENT']         = 'cURL';
         // True to include the header in the output
@@ -101,7 +99,7 @@ class curl {
     /**
      * Reset Cookie
      */
-    public function resetcookie() {
+    public function delete_cookie() {
         if (!empty($this->cookie)) {
             if (is_file($this->cookie)) {
                 $fp = fopen($this->cookie, 'w');
@@ -120,7 +118,7 @@ class curl {
      * reset the options to default value.
      *
      */
-    public function setopt($options = array()) {
+    public function set_options($options = array()) {
         if (is_array($options)) {
             foreach($options as $name => $val){
                 if (stripos($name, 'CURLOPT_') === false) {
@@ -134,7 +132,7 @@ class curl {
      * Reset http method
      *
      */
-    public function cleanopt(){
+    public function reset_options(){
         unset($this->options['CURLOPT_HTTPGET']);
         unset($this->options['CURLOPT_POST']);
         unset($this->options['CURLOPT_POSTFIELDS']);
@@ -150,13 +148,13 @@ class curl {
      * @param array $headers
      *
      */
-    public function setHeader($header) {
+    public function set_headers($header) {
         if (is_array($header)){
             foreach ($header as $v) {
-                $this->setHeader($v);
+                $this->set_headers($v);
             }
         } else {
-            $this->header[] = $header;
+            $this->headers[] = $header;
         }
     }
     /**
@@ -174,7 +172,7 @@ class curl {
      * @param string $header
      * @return int The strlen of the header
      */
-    private function formatHeader($ch, $header)
+    private function handle_response_headers($ch, $header)
     {
         $this->count++;
         if (strlen($header) > 2) {
@@ -204,38 +202,38 @@ class curl {
      * @param array $options
      * @return object The curl handle
      */
-    private function apply_opt($curl, $options) {
+    private function apply_options($curl, $options) {
         // Clean up
-        $this->cleanopt();
+        $this->reset_options();
         // set cookie
         if (!empty($this->cookie) || !empty($options['cookie'])) {
-            $this->setopt(array('cookiejar'=>$this->cookie,
+            $this->set_options(array(
+                            'cookiejar'=>$this->cookie,
                             'cookiefile'=>$this->cookie
                              ));
         }
 
         // set proxy
         if (!empty($this->proxy) || !empty($options['proxy'])) {
-            $this->setopt($this->proxy);
+            $this->set_options($this->proxy);
         }
-        $this->setopt($options);
+        $this->set_options($options);
         // reset before set options
-        curl_setopt($curl, CURLOPT_HEADERFUNCTION, array(&$this,'formatHeader'));
+        curl_setopt($curl, CURLOPT_HEADERFUNCTION, array(&$this,'handle_response_headers'));
         // set headers
-        if (empty($this->header)){
-            $this->setHeader(array(
-                'User-Agent: MoodleBot/1.0',
-                'Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-                'Connection: keep-alive'
+        if (empty($this->headers)){
+            $this->set_headers(array(
+                'User-Agent: ' . $this->options['CURLOPT_USERAGENT'],
+                'Accept-Charset: UTF-8'
                 ));
         }
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->header);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->headers);
 
         if ($this->debug){
             echo '<h1>Options</h1>';
             var_dump($this->options);
             echo '<h1>Header</h1>';
-            var_dump($this->header);
+            var_dump($this->headers);
         }
 
         // set options
@@ -288,7 +286,7 @@ class curl {
                 $options[$n] = $url[$n];
             }
             $handles[$i] = curl_init($url['url']);
-            $this->apply_opt($handles[$i], $options);
+            $this->apply_options($handles[$i], $options);
             curl_multi_add_handle($main, $handles[$i]);
         }
         $running = 0;
@@ -317,7 +315,7 @@ class curl {
         // create curl instance
         $curl = curl_init($url);
         $options['url'] = $url;
-        $this->apply_opt($curl, $options);
+        $this->apply_options($curl, $options);
         if ($this->cache && $ret = $this->cache->get($this->options)) {
             return $ret;
         } else {
@@ -344,9 +342,7 @@ class curl {
         if (empty($this->error)){
             return $ret;
         } else {
-            return $this->error;
-            // exception is not ajax friendly
-            //throw new moodle_exception($this->error, 'curl');
+            throw new Exception($this->error);
         }
     }
 
@@ -368,49 +364,54 @@ class curl {
 
     /**
      * Recursive function formating an array in POST parameter
+     *
      * @param array $arraydata - the array that we are going to format and add into &$data array
      * @param string $currentdata - a row of the final postdata array at instant T
      *                when finish, it's assign to $data under this format: name[keyname][][]...[]='value'
      * @param array $data - the final data array containing all POST parameters : 1 row = 1 parameter
      */
-    function format_array_postdata_for_curlcall($arraydata, $currentdata, &$data) {
-        foreach ($arraydata as $k=>$v) {
-            $newcurrentdata = $currentdata;
+    private function make_array_field($fieldname, $arraydata, &$postfields) {
+        global $depth;
+        $depth++;
+        foreach ($arraydata as $key=>$v) {
+            $key = urlencode($key);
             if (is_object($v)) {
-                $v = (array) $v;
+                $v = (array)$v;
             }
             if (is_array($v)) { //the value is an array, call the function recursively
-                $newcurrentdata = $newcurrentdata.'['.urlencode($k).']';
-                $this->format_array_postdata_for_curlcall($v, $newcurrentdata, $data);
-            }  else { //add the POST parameter to the $data array
-                $data[] = $newcurrentdata.'['.urlencode($k).']='.urlencode($v);
+                $newfieldname = $fieldname."[$key]";
+                $this->make_array_field($newfieldname, $v, $postfields);
+            } else {
+                $postfields[] = $fieldname."[$key]=".urlencode($v);
             }
         }
     }
 
     /**
      * Transform a PHP array into POST parameter
-     * (see the recursive function format_array_postdata_for_curlcall)
+     *
      * @param array $postdata
      * @return array containing all POST parameters  (1 row = 1 POST parameter)
      */
-    function format_postdata_for_curlcall($postdata) {
+    private function make_postfields($postdata) {
+        global $depth;
+        $depth = 0;
         if (is_object($postdata)) {
-            $postdata = (array) $postdata;
+            $postdata = (array)$postdata;
         }
-        $data = array();
-        foreach ($postdata as $k=>$v) {
-            if (is_object($v)) {
-                $v = (array) $v;
+        $postfields = array();
+        foreach ($postdata as $key=>$value) {
+            $key = urlencode($key);
+            if (is_object($value)) {
+                $value = (array)$value;
             }
-            if (is_array($v)) {
-                $currentdata = urlencode($k);
-                $this->format_array_postdata_for_curlcall($v, $currentdata, $data);
+            if (is_array($value)) {
+                $this->make_array_field($key, $value, $postfields);
             }  else {
-                $data[] = urlencode($k).'='.urlencode($v);
+                $postfields[] = $key.'='.urlencode($value);
             }
         }
-        $convertedpostdata = implode('&', $data);
+        $convertedpostdata = implode('&', $postfields);
         return $convertedpostdata;
     }
 
@@ -425,7 +426,7 @@ class curl {
     public function post($url, $params = '', $options = array()){
         $options['CURLOPT_POST']       = 1;
         if (is_array($params)) {
-            $params = $this->format_postdata_for_curlcall($params);
+            $params = $this->make_postfields($params);
         }
         $options['CURLOPT_POSTFIELDS'] = $params;
         return $this->request($url, $options);
@@ -468,7 +469,7 @@ class curl {
         $options['CURLOPT_INFILESIZE'] = $size;
         $options['CURLOPT_INFILE']     = $fp;
         if (!isset($this->options['CURLOPT_USERPWD'])){
-            $this->setopt(array('CURLOPT_USERPWD'=>'anonymous: noreply@moodle.org'));
+            $this->set_options(array('CURLOPT_USERPWD'=>'anonymous: noreply@moodle.org'));
         }
         $ret = $this->request($url, $options);
         fclose($fp);
@@ -523,16 +524,11 @@ class curl {
 /**
  * This class is used by cURL class, use case:
  *
- * <code>
- *
  * $c = new curl(array('cache'=>true), 'module_cache'=>'repository');
  * $ret = $c->get('http://www.google.com');
- * </code>
  *
- * @package    core
- * @subpackage file
- * @copyright  1999 onwards Martin Dougiamas  {@link http://moodle.com}
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @copyright  Dongsheng Cai {@see http://dongsheng.org}
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
 class curl_cache {
     /** @var string */
