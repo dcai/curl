@@ -1,0 +1,9 @@
+{
+    "require": {
+        "phpunit/phpunit": "3.7.*"
+    },
+    "config": {
+        "bin-dir": "/usr/local/bin/"
+    }
+}
+
