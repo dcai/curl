@@ -21,3 +21,5 @@ $html = $c->post('http://example.com/', array('q'=>'words', 'name'=>'moodle'));
 // HTTP PUT Method
 $html = $c->put('http://example.com/', array('file'=>'/var/www/test.txt');
 ```
+
+[![Build Status](https://travis-ci.org/dongsheng/cURL.png)](https://travis-ci.org/dongsheng/cURL)
