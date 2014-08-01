@@ -23,14 +23,32 @@
  * @copyright  Dongsheng Cai {@see http://dongsheng.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
+class response {
+    public $headers = array();
+    public $status_code;
+    public $text = '';
+
+    public function __construct($status_code, $headers, $text) {
+        $this->status_code = $status_code;
+        $this->headers = $headers;
+        $this->text = $text;
+    }
+
+    public function __toString() {
+        return $this->text;
+    }
+    public function json() {
+        return json_decode($this->text);
+    }
+}
 
 class curl {
     /** @var bool */
     public  $cache    = false;
     public  $proxy    = false;
     /** @var array */
-    public  $response = array();
-    public  $headers  = array();
+    public  $response_headers = array();
+    public  $request_headers  = array();
     /** @var string */
     public  $info;
     public  $error;
@@ -164,15 +182,15 @@ class curl {
                 $this->set_headers($v);
             }
         } else {
-            $this->headers[] = $header;
+            $this->request_headers[] = $header;
         }
     }
 
     /**
      * Set HTTP Response Header
      */
-    public function get_response() {
-        return $this->response;
+    public function get_response_headers() {
+        return $this->response_headers;
     }
     /**
      * private callback function
@@ -183,22 +201,22 @@ class curl {
      * @return int The strlen of the header
      */
     private function handle_response_headers($ch, $header) {
-        $this->count++;
+        //$this->count++;
         if (strlen($header) > 2) {
             list($key, $value) = explode(" ", rtrim($header, "\r\n"), 2);
             $key = rtrim($key, ':');
-            if (!empty($this->response[$key])) {
-                if (is_array($this->response[$key])){
-                    $this->response[$key][] = $value;
+            if (!empty($this->response_headers[$key])) {
+                if (is_array($this->response_headers[$key])){
+                    $this->response_headers[$key][] = $value;
                 } else {
-                    $tmp = $this->response[$key];
-                    $this->response[$key] = array();
-                    $this->response[$key][] = $tmp;
-                    $this->response[$key][] = $value;
+                    $tmp = $this->response_headers[$key];
+                    $this->response_headers[$key] = array();
+                    $this->response_headers[$key][] = $tmp;
+                    $this->response_headers[$key][] = $value;
 
                 }
             } else {
-                $this->response[$key] = $value;
+                $this->response_headers[$key] = $value;
             }
         }
         return strlen($header);
@@ -211,7 +229,7 @@ class curl {
      * @param array $options
      * @return object The curl handle
      */
-    private function apply_options($curl, $options) {
+    private function prepare_request($curl, $options) {
         // set cookie
         if (!empty($this->cookie) || !empty($options['cookie'])) {
             $this->set_option('cookiejar', $this->cookie);
@@ -226,19 +244,17 @@ class curl {
         // reset before set options
         curl_setopt($curl, CURLOPT_HEADERFUNCTION, array(&$this,'handle_response_headers'));
         // set headers
-        if (empty($this->headers)){
+        if (empty($this->request_headers)){
             $this->set_headers(array(
                 'User-Agent: ' . $this->options['CURLOPT_USERAGENT'],
                 'Accept-Charset: UTF-8'
                 ));
         }
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->headers);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->request_headers);
 
         if ($this->debug){
-            echo '<h1>Options</h1>';
             var_dump($this->options);
-            echo '<h1>Header</h1>';
-            var_dump($this->headers);
+            var_dump($this->request_headers);
         }
 
         // set options
@@ -293,7 +309,7 @@ class curl {
             $handles[$i] = curl_init($url['url']);
             // Clean up
             $this->reset_options();
-            $this->apply_options($handles[$i], $options);
+            $this->prepare_request($handles[$i], $options);
             curl_multi_add_handle($main, $handles[$i]);
         }
         $running = 0;
@@ -322,15 +338,14 @@ class curl {
         // create curl instance
         $curl = curl_init($url);
         $options['url'] = $url;
-        // Clean up
         $this->reset_options();
-        $this->apply_options($curl, $options);
-        if ($this->cache && $ret = $this->cache->get($this->options)) {
-            return $ret;
+        $this->prepare_request($curl, $options);
+        if ($this->cache && $httpbody = $this->cache->get($this->options)) {
+            return $httpbody;
         } else {
-            $ret = curl_exec($curl);
+            $httpbody = curl_exec($curl);
             if ($this->cache) {
-                $this->cache->set($this->options, $ret);
+                $this->cache->set($this->options, $httpbody);
             }
         }
 
@@ -338,21 +353,18 @@ class curl {
         $this->error = curl_error($curl);
 
         if ($this->debug){
-            echo '<h1>Return Data</h1>';
-            var_dump($ret);
-            echo '<h1>Info</h1>';
             var_dump($this->info);
-            echo '<h1>Error</h1>';
             var_dump($this->error);
         }
 
         curl_close($curl);
 
-        if (empty($this->error)) {
-            return $ret;
-        } else {
+        $response = new response($this->info['http_code'], $this->response_headers, $httpbody);
+
+        if (!empty($this->error)) {
             throw new Exception($this->error);
         }
+        return $response;
     }
 
     /**
