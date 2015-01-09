@@ -1,4 +1,5 @@
 <?php
+namespace org\dongsheng;
 /**
  * @copyright  Dongsheng Cai {@see http://dongsheng.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
@@ -19,7 +20,7 @@ class xmlrpc_client {
         $this->connection = new curl(array('debug'=>true));
         $this->methods = array();
         if ($autoload) {
-            $resp = $this->call('system.listMethods', null);
+            $resp = $this->call('flickr.test.echo', null);
             $this->methods = $resp;
             print_r($resp);
         }
@@ -31,7 +32,7 @@ class xmlrpc_client {
 }
 
 header('Content-Type: text/plain');
-$rpc = 'http://log.dongsheng.org/xmlrpc.php';
+$rpc = 'https://api.flickr.com/services/xmlrpc/';
 $client = new xmlrpc_client($rpc, true);
 //$resp = $client->call('methodname', array());
 //print_r($resp);

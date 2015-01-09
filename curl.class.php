@@ -1,4 +1,6 @@
 <?php
+namespace org\dongsheng;
+
 /**
  * RESTful cURL class
  *
@@ -12,11 +14,16 @@
  * // enable proxy
  * $c = new curl(array('proxy'=>true));
  *
- * // HTTP GET Method
+ * // HTTP GET
  * $html = $c->get('http://example.com');
- * // HTTP POST Method
+ *
+ * // HTTP POST
  * $html = $c->post('http://example.com/', array('q'=>'words', 'name'=>'moodle'));
- * // HTTP PUT Method
+ *
+ * // Post RAW content, such as XML or json
+ * $html = $c->post('http://example.com/', $rawhttpbody);
+ *
+ * // HTTP PUT
  * $html = $c->put('http://example.com/', array('file'=>'/var/www/test.txt');
  * </code>
  *
@@ -169,20 +176,16 @@ class curl {
     }
 
     public function set_header($header) {
-        $this->set_headers($header);
+        $this->request_headers[] = $header;
     }
     /**
      * Set HTTP Request Header
      *
      * @param array $headers
      */
-    public function set_headers($header) {
-        if (is_array($header)){
-            foreach ($header as $v) {
-                $this->set_headers($v);
-            }
-        } else {
-            $this->request_headers[] = $header;
+    public function set_headers(array $headers) {
+        foreach ($headers as $header) {
+            $this->set_header($header);
         }
     }
 
