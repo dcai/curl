@@ -1,10 +1,13 @@
 language: php
 php:
-  - "5.4"
-  - "5.3"
+  - "5.5"
+
 before_script:
   - wget http://getcomposer.org/composer.phar
   - php composer.phar install
+
 script:
   phpunit -c phpunit.xml
 
+#addons:
+    #artifacts: true

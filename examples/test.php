@@ -6,7 +6,7 @@
 
 require_once('../curl.class.php');
 
-$curl = new org\dongsheng\curl();
+$curl = new dcai\curl();
 
 $r = $curl->get('http://google.com');
 

@@ -1,18 +1,18 @@
 <?php
-namespace org\dongsheng;
+namespace dcai;
 
 /**
  * RESTful cURL class
  *
  * This is a wrapper class for curl, it is quite easy to use:
  * <code>
- * $c = new curl;
+ * $c = new dcai\curl;
  * // enable cache
- * $c = new curl(array('cache'=>true));
+ * $c = new dcai\curl(array('cache'=>true));
  * // enable cookie
- * $c = new curl(array('cookie'=>true));
+ * $c = new dcai\curl(array('cookie'=>true));
  * // enable proxy
- * $c = new curl(array('proxy'=>true));
+ * $c = new dcai\curl(array('proxy'=>true));
  *
  * // HTTP GET
  * $html = $c->get('http://example.com');
