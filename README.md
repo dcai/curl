@@ -1,6 +1,6 @@
-# cURL wrapper class for PHP
+# curl wrapper class for PHP
 
-This is a PHP class to make cURL library easier to use
+A PHP wrapper class to simplify [PHP cURL Library](http://php.net/manual/en/book.curl.php).
 
 ## How to use
 Following code shows how to use this class
@@ -25,4 +25,4 @@ $response = $http->post('http://example.com/', $xml);
 $response = $http->put('http://example.com/', array('file'=>'/var/www/test.txt');
 ```
 
-[![Build Status](https://travis-ci.org/dcai/cURL.png)](https://travis-ci.org/dcai/cURL)
+[![Build Status](https://travis-ci.org/dcai/curl.png)](https://travis-ci.org/dcai/curl)
