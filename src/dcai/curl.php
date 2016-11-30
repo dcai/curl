@@ -640,3 +640,4 @@ class curl_cache {
         }
     }
 }
+echo "Class Foo loaded from " . __FILE__ . "\n";

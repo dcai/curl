@@ -10,7 +10,11 @@
             "role": "Developer"
         }
     ],
+    "autoload": {
+        "psr-4": {
+            "dcai\\": "src/dcai/"
+        }
+    },
     "require": {
     }
 }
-
