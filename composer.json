@@ -1,9 +1,16 @@
 {
     "name": "dcai/curl",
+    "license" : "GPL-3.0",
+    "description": "curl wrapper",
+    "authors": [
+        {
+            "name": "Dongsheng Cai",
+            "email": "d@tux.im",
+            "homepage": "https://dongsheng.org",
+            "role": "Developer"
+        }
+    ],
     "require": {
-    },
-    "config": {
-        "bin-dir": "/usr/local/bin/"
     }
 }
 
