@@ -4,71 +4,38 @@ namespace dcai;
 /**
  * RESTful cURL class
  *
- * This is a wrapper class for curl, it is quite easy to use:
- * <code>
- * $c = new dcai\curl;
- * // enable cache
- * $c = new dcai\curl(array('cache'=>true));
- * // enable cookie
- * $c = new dcai\curl(array('cookie'=>true));
- * // enable proxy
- * $c = new dcai\curl(array('proxy'=>true));
- *
- * // HTTP GET
- * $html = $c->get('http://example.com');
- *
- * // HTTP POST
- * $html = $c->post('http://example.com/', array('q'=>'words', 'name'=>'moodle'));
- *
- * // Post RAW content, such as XML or json
- * $html = $c->post('http://example.com/', $rawhttpbody);
- *
- * // HTTP PUT
- * $html = $c->put('http://example.com/', array('file'=>'/var/www/test.txt');
- * </code>
+ * This is a wrapper class for curl.
  *
  * @copyright  Dongsheng Cai {@see http://dongsheng.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
-class response {
-    public $headers = array();
-    public $status_code;
-    public $text = '';
 
-    public function __construct($status_code, $headers, $text) {
-        $this->status_code = $status_code;
-        $this->headers = $headers;
-        $this->text = $text;
-    }
-
-    public function __toString() {
-        return $this->text;
-    }
-    public function json() {
-        return json_decode($this->text);
+if (!function_exists('curl_file_create')) {
+    function curl_file_create($filename, $mimetype = '', $postname = '') {
+        return "@$filename;filename="
+            . ($postname ? '' : basename($filename))
+            . ($mimetype ? ";type=$mimetype" : '');
     }
 }
 
 class curl {
+    const DEFAULT_USERPWD = 'anonymous: anonymous@domain.com';
     /** @var bool */
-    public  $cache    = false;
-    public  $proxy    = false;
+    public $proxy = false;
+    /** @var object */
+    public $cacheInstance = null;
     /** @var array */
-    public  $response_headers = array();
-    public  $request_headers  = array();
+    public $responseHeaders = array();
+    public $requestHeaders  = array();
     /** @var string */
-    public  $info;
-    public  $error;
-
+    public $info;
+    public $error;
     /** @var array */
-    private $options;
-    /** @var string */
-    private $proxy_host = '';
-    private $proxy_auth = '';
-    private $proxy_type = '';
+    private $curlOptions;
     /** @var bool */
-    private $debug    = false;
-    private $cookie   = false;
+    private $debug = false;
+    /** @var string */
+    private $cookiePath = null;
 
     /**
      * @param array $options
@@ -78,56 +45,161 @@ class curl {
             throw new Exception('cURL module must be enabled!');
         }
         // the options of curl should be init here.
-        $this->initialize_default_options();
+        $this->initializeCurlOptions();
         if (!empty($options['debug'])) {
             $this->debug = true;
         }
         if(!empty($options['cookie'])) {
             if($options['cookie'] === true) {
-                $this->cookie = 'curl_cookie.txt';
+                $this->cookiePath = 'curl_cookie.txt';
             } else {
-                $this->cookie = $options['cookie'];
+                $this->cookiePath = $options['cookie'];
             }
         }
         if (!empty($options['cache'])) {
             if (class_exists('curl_cache')) {
-                $this->cache = new curl_cache();
+                $this->cacheInstance = new curl_cache();
             }
         }
     }
+
+    /**
+     * HTTP GET method
+     *
+     * @param string $url
+     * @param array $params
+     * @param array $curlOptions
+     * @return bool
+     */
+    public function get($url, $params = array(), $curlOptions = array()) {
+        $curlOptions['CURLOPT_HTTPGET'] = 1;
+
+        if (!empty($params)){
+            $url .= (stripos($url, '?') !== false) ? '&' : '?';
+            $url .= http_build_query($params, '', '&');
+        }
+        return $this->request($url, $curlOptions);
+    }
+
+    /**
+     * HTTP POST method
+     *
+     * @param string $url
+     * @param array|string $params
+     * @param array $curlOptions
+     * @return bool
+     */
+    public function post($url, $params = '', $curlOptions = array()) {
+        if (is_array($params)) {
+            $params = $this->makePostFields($params);
+        }
+        $curlOptions['CURLOPT_POST'] = 1;
+        $curlOptions['CURLOPT_POSTFIELDS'] = $params;
+        return $this->request($url, $curlOptions);
+    }
+
+    /**
+     * HTTP PUT method
+     *
+     * @param string $url
+     * @param array $params
+     * @param array $curlOptions
+     * @return bool
+     */
+    public function put($url, $params = array(), $curlOptions = array()) {
+        $file = $params['file'];
+        if (!is_file($file)){
+            return null;
+        }
+        $fp   = fopen($file, 'r');
+        $size = filesize($file);
+        $curlOptions['CURLOPT_PUT']        = 1;
+        $curlOptions['CURLOPT_INFILESIZE'] = $size;
+        $curlOptions['CURLOPT_INFILE']     = $fp;
+        if (!isset($this->curlOptions['CURLOPT_USERPWD'])){
+            $curlOptions['CURLOPT_USERPWD'] = self::DEFAULT_USERPWD;
+        }
+        $ret = $this->request($url, $curlOptions);
+        fclose($fp);
+        return $ret;
+    }
+
+    /**
+     * HTTP DELETE method
+     *
+     * @param string $url
+     * @param array $params
+     * @param array $curlOptions
+     * @return bool
+     */
+    public function delete($url, $param = array(), $curlOptions = array()) {
+        $curlOptions['CURLOPT_CUSTOMREQUEST'] = 'DELETE';
+        if (!isset($curlOptions['CURLOPT_USERPWD'])) {
+            $curlOptions['CURLOPT_USERPWD'] = self::DEFAULT_USERPWD;
+        }
+        $ret = $this->request($url, $curlOptions);
+        return $ret;
+    }
+    /**
+     * HTTP TRACE method
+     *
+     * @param string $url
+     * @param array $curlOptions
+     * @return bool
+     */
+    public function trace($url, $curlOptions = array()) {
+        $curlOptions['CURLOPT_CUSTOMREQUEST'] = 'TRACE';
+        $ret = $this->request($url, $curlOptions);
+        return $ret;
+    }
+    /**
+     * HTTP OPTIONS method
+     *
+     * @param string $url
+     * @param array $curlOptions
+     * @return bool
+     */
+    public function options($url, $curlOptions = array()) {
+        $curlOptions['CURLOPT_CUSTOMREQUEST'] = 'OPTIONS';
+        $ret = $this->request($url, $curlOptions);
+        return $ret;
+    }
+
+
     /**
      * Resets the CURL options that have already been set
      */
-    private function initialize_default_options() {
-        $this->options = array();
-        $this->options['CURLOPT_USERAGENT']         = 'cURL';
-        // True to include the header in the output
-        $this->options['CURLOPT_HEADER']            = 0;
-        // True to Exclude the body from the output
-        $this->options['CURLOPT_NOBODY']            = 0;
-        // TRUE to follow any "Location: " header that the server
-        // sends as part of the HTTP header (note this is recursive,
-        // PHP will follow as many "Location: " headers that it is sent,
-        // unless CURLOPT_MAXREDIRS is set).
-        //$this->options['CURLOPT_FOLLOWLOCATION']    = 1;
-        $this->options['CURLOPT_MAXREDIRS']         = 10;
-        $this->options['CURLOPT_ENCODING']          = '';
-        // TRUE to return the transfer as a string of the return
-        // value of curl_exec() instead of outputting it out directly.
-        $this->options['CURLOPT_RETURNTRANSFER']    = 1;
-        $this->options['CURLOPT_BINARYTRANSFER']    = 0;
-        $this->options['CURLOPT_SSL_VERIFYPEER']    = 0;
-        $this->options['CURLOPT_SSL_VERIFYHOST']    = 2;
-        $this->options['CURLOPT_CONNECTTIMEOUT']    = 30;
+    private function initializeCurlOptions() {
+        $this->curlOptions = [
+            'CURLOPT_USERAGENT' => 'cURL',
+            // True to include the header in the output
+            'CURLOPT_HEADER' => 0,
+            // True to Exclude the body from the output
+            'CURLOPT_NOBODY' => 0,
+            // TRUE to follow any "Location: " header that the server
+            // sends as part of the HTTP header (note this is recursive,
+            // PHP will follow as many "Location: " headers that it is sent,
+            // unless CURLOPT_MAXREDIRS is set).
+            //$this->curlOptions['CURLOPT_FOLLOWLOCATION'] = 1;
+            'CURLOPT_MAXREDIRS' => 10,
+            'CURLOPT_ENCODING' => '',
+            // TRUE to return the transfer as a string of the return
+            // value of curl_exec() instead of outputting it out directly.
+            'CURLOPT_RETURNTRANSFER' => 1,
+            'CURLOPT_BINARYTRANSFER' => 0,
+            'CURLOPT_SSL_VERIFYPEER' => 0,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
+            'CURLOPT_CONNECTTIMEOUT' => 30,
+        ];
     }
 
     /**
      * Reset Cookie
      */
-    public function delete_cookie() {
-        if (!empty($this->cookie)) {
-            if (is_file($this->cookie)) {
-                $fp = fopen($this->cookie, 'w');
+    public function deleteCookie() {
+        if (!empty($this->cookiePath)) {
+            if (is_file($this->cookiePath)) {
+                $fp = fopen($this->cookiePath, 'w');
                 if (!empty($fp)) {
                     fwrite($fp, '');
                     fclose($fp);
@@ -142,22 +214,23 @@ class curl {
      * @param string $name
      * @param string $value
      */
-    public function set_option($name, $value) {
-        $this->set_options(array($name, $value));
+    public function setCurlOption($name, $value) {
+        $this->setCurlOptions(array($name, $value));
     }
+
     /**
      * Set curl options
      *
-     * @param array $options If array is null, this function will
+     * @param array $curlOptions If array is null, this function will
      *                       reset the options to default value.
      */
-    public function set_options($options = array()) {
-        if (is_array($options)) {
-            foreach($options as $name => $val){
+    public function setCurlOptions($curlOptions = array()) {
+        if (is_array($curlOptions)) {
+            foreach($curlOptions as $name => $val){
                 if (stripos($name, 'CURLOPT_') === false) {
                     $name = strtoupper('CURLOPT_'.$name);
                 }
-                $this->options[$name] = $val;
+                $this->curlOptions[$name] = $val;
             }
         }
     }
@@ -165,35 +238,35 @@ class curl {
      * Reset http method
      *
      */
-    public function reset_options() {
-        unset($this->options['CURLOPT_HTTPGET']);
-        unset($this->options['CURLOPT_POST']);
-        unset($this->options['CURLOPT_POSTFIELDS']);
-        unset($this->options['CURLOPT_PUT']);
-        unset($this->options['CURLOPT_INFILE']);
-        unset($this->options['CURLOPT_INFILESIZE']);
-        unset($this->options['CURLOPT_CUSTOMREQUEST']);
+    public function resetCurlOptions() {
+        unset($this->curlOptions['CURLOPT_HTTPGET']);
+        unset($this->curlOptions['CURLOPT_POST']);
+        unset($this->curlOptions['CURLOPT_POSTFIELDS']);
+        unset($this->curlOptions['CURLOPT_PUT']);
+        unset($this->curlOptions['CURLOPT_INFILE']);
+        unset($this->curlOptions['CURLOPT_INFILESIZE']);
+        unset($this->curlOptions['CURLOPT_CUSTOMREQUEST']);
     }
 
-    public function set_header($header) {
-        $this->request_headers[] = $header;
+    public function setHeader($header) {
+        $this->requestHeaders[] = $header;
     }
     /**
      * Set HTTP Request Header
      *
      * @param array $headers
      */
-    public function set_headers(array $headers) {
+    public function setHeaders(array $headers) {
         foreach ($headers as $header) {
-            $this->set_header($header);
+            $this->setHeader($header);
         }
     }
 
     /**
      * Set HTTP Response Header
      */
-    public function get_response_headers() {
-        return $this->response_headers;
+    public function getResponseHeaders() {
+        return $this->responseHeaders;
     }
     /**
      * private callback function
@@ -203,23 +276,23 @@ class curl {
      * @param string $header
      * @return int The strlen of the header
      */
-    private function handle_response_headers($ch, $header) {
+    private function handleResponseHeaders($ch, $header) {
         //$this->count++;
         if (strlen($header) > 2) {
             list($key, $value) = explode(" ", rtrim($header, "\r\n"), 2);
             $key = rtrim($key, ':');
-            if (!empty($this->response_headers[$key])) {
-                if (is_array($this->response_headers[$key])){
-                    $this->response_headers[$key][] = $value;
+            if (!empty($this->responseHeaders[$key])) {
+                if (is_array($this->responseHeaders[$key])){
+                    $this->responseHeaders[$key][] = $value;
                 } else {
-                    $tmp = $this->response_headers[$key];
-                    $this->response_headers[$key] = array();
-                    $this->response_headers[$key][] = $tmp;
-                    $this->response_headers[$key][] = $value;
+                    $tmp = $this->responseHeaders[$key];
+                    $this->responseHeaders[$key] = array();
+                    $this->responseHeaders[$key][] = $tmp;
+                    $this->responseHeaders[$key][] = $value;
 
                 }
             } else {
-                $this->response_headers[$key] = $value;
+                $this->responseHeaders[$key] = $value;
             }
         }
         return strlen($header);
@@ -232,36 +305,37 @@ class curl {
      * @param array $options
      * @return object The curl handle
      */
-    private function prepare_request($curl, $options) {
+    private function prepareRequest($curl, $curlOptions) {
         // set cookie
-        if (!empty($this->cookie) || !empty($options['cookie'])) {
-            $this->set_option('cookiejar', $this->cookie);
-            $this->set_option('cookiefile', $this->cookie);
+        if (!empty($this->cookiePath) || !empty($curlOptions['cookie'])) {
+            $this->setCurlOption('cookiejar', $this->cookiePath);
+            $this->setCurlOption('cookiefile', $this->cookiePath);
         }
 
         // set proxy
-        if (!empty($this->proxy) || !empty($options['proxy'])) {
-            $this->set_options($this->proxy);
+        if (!empty($this->proxy) || !empty($curlOptions['proxy'])) {
+            $this->setCurlOptions($this->proxy);
         }
-        $this->set_options($options);
+
+        $this->setCurlOptions($curlOptions);
         // reset before set options
-        curl_setopt($curl, CURLOPT_HEADERFUNCTION, array(&$this,'handle_response_headers'));
+        curl_setopt($curl, CURLOPT_HEADERFUNCTION, array(&$this, 'handleResponseHeaders'));
         // set headers
-        if (empty($this->request_headers)){
-            $this->set_headers(array(
-                'User-Agent: ' . $this->options['CURLOPT_USERAGENT'],
+        if (empty($this->requestHeaders)){
+            $this->setHeaders(array(
+                'User-Agent: ' . $this->curlOptions['CURLOPT_USERAGENT'],
                 'Accept-Charset: UTF-8'
                 ));
         }
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->request_headers);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->requestHeaders);
 
         if ($this->debug){
-            var_dump($this->options);
-            var_dump($this->request_headers);
+            var_dump($this->curlOptions);
+            var_dump($this->requestHeaders);
         }
 
-        // set options
-        foreach($this->options as $name => $val) {
+        // Apply options
+        foreach($this->curlOptions as $name => $val) {
             if (is_string($name)) {
                 $name = constant(strtoupper($name));
             }
@@ -269,13 +343,14 @@ class curl {
         }
         return $curl;
     }
+
     /**
      * Download multiple files in parallel
      *
      * Calls {@link multi()} with specific download headers
      *
      * <code>
-     * $c = new curl;
+     * $c = new \dcai\curl;
      * $c->download(array(
      *              array('url'=>'http://localhost/', 'file'=>fopen('a', 'wb')),
      *              array('url'=>'http://localhost/20/', 'file'=>fopen('b', 'wb'))
@@ -291,6 +366,7 @@ class curl {
         $options['RETURNTRANSFER'] = false;
         return $this->multi($requests, $options);
     }
+
     /*
      * Mulit HTTP Requests
      * This function could run multi-requests in parallel.
@@ -311,8 +387,8 @@ class curl {
             }
             $handles[$i] = curl_init($url['url']);
             // Clean up
-            $this->reset_options();
-            $this->prepare_request($handles[$i], $options);
+            $this->resetCurlOptions();
+            $this->prepareRequest($handles[$i], $options);
             curl_multi_add_handle($main, $handles[$i]);
         }
         $running = 0;
@@ -330,6 +406,7 @@ class curl {
         curl_multi_close($main);
         return $results;
     }
+
     /**
      * Single HTTP Request
      *
@@ -337,18 +414,18 @@ class curl {
      * @param array $options
      * @return bool
      */
-    protected function request($url, $options = array()) {
+    protected function request($url, $curlOptions = array()) {
         // create curl instance
         $curl = curl_init($url);
-        $options['url'] = $url;
-        $this->reset_options();
-        $this->prepare_request($curl, $options);
-        if ($this->cache && $httpbody = $this->cache->get($this->options)) {
+        $curlOptions['url'] = $url;
+        $this->resetCurlOptions();
+        $this->prepareRequest($curl, $curlOptions);
+        if ($this->cacheInstance && $httpbody = $this->cacheInstance->get($this->curlOptions)) {
             return $httpbody;
         } else {
             $httpbody = curl_exec($curl);
-            if ($this->cache) {
-                $this->cache->set($this->options, $httpbody);
+            if ($this->cacheInstance) {
+                $this->cacheInstance->set($this->curlOptions, $httpbody);
             }
         }
 
@@ -362,7 +439,7 @@ class curl {
 
         curl_close($curl);
 
-        $response = new response($this->info['http_code'], $this->response_headers, $httpbody);
+        $response = new CurlHttpResponse($this->info['http_code'], $this->responseHeaders, $httpbody);
 
         if (!empty($this->error)) {
             throw new Exception($this->error);
@@ -394,21 +471,20 @@ class curl {
      *                when finish, it's assign to $data under this format: name[keyname][][]...[]='value'
      * @param array $data - the final data array containing all POST parameters : 1 row = 1 parameter
      */
-    private function make_array_field($fieldname, $arraydata, &$postfields) {
-        global $depth;
-        $depth++;
-        foreach ($arraydata as $key=>$v) {
+    private function makeArrayField($fieldname, $arrayData, $postFields) {
+        foreach ($arrayData as $key => $value) {
             $key = urlencode($key);
-            if (is_object($v)) {
-                $v = (array)$v;
+            if (is_object($value)) {
+                $value = (array)$value;
             }
-            if (is_array($v)) { //the value is an array, call the function recursively
-                $newfieldname = $fieldname."[$key]";
-                $this->make_array_field($newfieldname, $v, $postfields);
+            if (is_array($value)) { //the value is an array, call the function recursively
+                $newfieldname = $fieldname . "[$key]";
+                $postFields = $this->makeArrayField($newfieldname, $value, $postFields);
             } else {
-                $postfields[] = $fieldname."[$key]=".urlencode($v);
+                $postFields[] = $fieldname . "[$key]=" . urlencode($value);
             }
         }
+        return $postFields;
     }
 
     /**
@@ -417,131 +493,59 @@ class curl {
      * @param array $postdata
      * @return array containing all POST parameters  (1 row = 1 POST parameter)
      */
-    private function make_postfields($postdata) {
-        global $depth;
-        $depth = 0;
-        if (is_object($postdata)) {
+    public function makePostFields($postdata) {
+        if (is_object($postdata) && !self::isCurlFile($value)) {
             $postdata = (array)$postdata;
         }
-        $postfields = array();
-        foreach ($postdata as $key=>$value) {
-            $key = urlencode($key);
-            if (is_object($value)) {
+        $postFields = array();
+        foreach ($postdata as $name => $value) {
+            $name = urlencode($name);
+            if (is_object($value) && !self::isCurlFile($value)) {
                 $value = (array)$value;
             }
-            if (is_array($value)) {
-                $this->make_array_field($key, $value, $postfields);
-            }  else {
-                $postfields[] = $key.'='.urlencode($value);
+            if (is_array($value) && !self::isCurlFile($value)) {
+                $postFields = $this->makeArrayField($name, $value, $postFields);
+            } else {
+                $postFields[$name] = $value;
             }
         }
-        $convertedpostdata = implode('&', $postfields);
-        return $convertedpostdata;
+        return $postFields;
     }
 
-    /**
-     * HTTP POST method
-     *
-     * @param string $url
-     * @param array|string $params
-     * @param array $options
-     * @return bool
-     */
-    public function post($url, $params = '', $options = array()) {
-        $options['CURLOPT_POST'] = 1;
-        if (is_array($params)) {
-            $params = $this->make_postfields($params);
-        }
-        $options['CURLOPT_POSTFIELDS'] = $params;
-        return $this->request($url, $options);
+    private static function isCurlFile($field) {
+        return is_object($field) ? get_class($field) === 'CURLFile' : false;
     }
 
-    /**
-     * HTTP GET method
-     *
-     * @param string $url
-     * @param array $params
-     * @param array $options
-     * @return bool
-     */
-    public function get($url, $params = array(), $options = array()) {
-        $options['CURLOPT_HTTPGET'] = 1;
-
-        if (!empty($params)){
-            $url .= (stripos($url, '?') !== false) ? '&' : '?';
-            $url .= http_build_query($params, '', '&');
-        }
-        return $this->request($url, $options);
+    public static function makeUploadFile($filepath, $filename = '', $mimetype = '') {
+        return curl_file_create($filepath, $filename, $mimetype);
     }
 
-    /**
-     * HTTP PUT method
-     *
-     * @param string $url
-     * @param array $params
-     * @param array $options
-     * @return bool
-     */
-    public function put($url, $params = array(), $options = array()) {
-        $file = $params['file'];
-        if (!is_file($file)){
-            return null;
-        }
-        $fp   = fopen($file, 'r');
-        $size = filesize($file);
-        $options['CURLOPT_PUT']        = 1;
-        $options['CURLOPT_INFILESIZE'] = $size;
-        $options['CURLOPT_INFILE']     = $fp;
-        if (!isset($this->options['CURLOPT_USERPWD'])){
-            $this->set_options(array('CURLOPT_USERPWD'=>'anonymous: noreply@moodle.org'));
-        }
-        $ret = $this->request($url, $options);
-        fclose($fp);
-        return $ret;
-    }
-
-    /**
-     * HTTP DELETE method
-     *
-     * @param string $url
-     * @param array $params
-     * @param array $options
-     * @return bool
-     */
-    public function delete($url, $param = array(), $options = array()) {
-        $options['CURLOPT_CUSTOMREQUEST'] = 'DELETE';
-        if (!isset($options['CURLOPT_USERPWD'])) {
-            $options['CURLOPT_USERPWD'] = 'anonymous: noreply@moodle.org';
-        }
-        $ret = $this->request($url, $options);
-        return $ret;
-    }
-    /**
-     * HTTP TRACE method
-     *
-     * @param string $url
-     * @param array $options
-     * @return bool
-     */
-    public function trace($url, $options = array()) {
-        $options['CURLOPT_CUSTOMREQUEST'] = 'TRACE';
-        $ret = $this->request($url, $options);
-        return $ret;
-    }
-    /**
-     * HTTP OPTIONS method
-     *
-     * @param string $url
-     * @param array $options
-     * @return bool
-     */
-    public function options($url, $options = array()) {
-        $options['CURLOPT_CUSTOMREQUEST'] = 'OPTIONS';
-        $ret = $this->request($url, $options);
-        return $ret;
-    }
-    public function get_info() {
+    public function getInfo() {
         return $this->info;
+    }
+}
+
+class CurlHttpResponse {
+    public $headers = array();
+    public $statusCode;
+    public $text = '';
+
+    public function __construct($statusCode, $headers, $text) {
+        $this->statusCode = $statusCode;
+        $this->headers = $headers;
+        $this->text = $text;
+    }
+
+    public function __toString() {
+        return $this->text;
+    }
+
+    public function text() {
+        return $this->text;
+    }
+
+    public function json() {
+        return json_decode($this->text);
     }
 }
 
