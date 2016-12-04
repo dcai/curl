@@ -5,7 +5,7 @@ namespace dcai;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
 
-require_once('../curl.class.php');
+require_once(dirname(__DIR__) . '/vendor/autoload.php');
 
 /**
  * Simple XMLRPC client

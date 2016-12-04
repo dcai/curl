@@ -4,11 +4,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
 
-require_once('../curl.class.php');
+require_once(dirname(__DIR__) . '/vendor/autoload.php');
 
 $curl = new dcai\curl();
 
-$r = $curl->get('http://google.com');
+$resp = $curl->get('http://httpbin.org/get');
 
-echo $r;
-var_dump($r);
+echo $resp;
