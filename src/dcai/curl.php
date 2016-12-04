@@ -248,18 +248,22 @@ class curl {
         unset($this->curlOptions['CURLOPT_CUSTOMREQUEST']);
     }
 
-    public function setHeader($header) {
-        $this->requestHeaders[] = $header;
+    public function appendRequestHeader($key, $value) {
+        $this->requestHeaders[] = ["$key", "$value"];
     }
     /**
      * Set HTTP Request Header
      *
      * @param array $headers
      */
-    public function setHeaders(array $headers) {
+    public function appendRequestHeaders(array $headers) {
         foreach ($headers as $header) {
-            $this->setHeader($header);
+            $this->appendRequestHeader($header[0], $header[1]);
         }
+    }
+
+    public function setRequestHeaders(array $headers) {
+        $this->requestHeaders = $headers;
     }
 
     /**
@@ -322,12 +326,13 @@ class curl {
         curl_setopt($curl, CURLOPT_HEADERFUNCTION, array(&$this, 'handleResponseHeaders'));
         // set headers
         if (empty($this->requestHeaders)){
-            $this->setHeaders(array(
-                'User-Agent: ' . $this->curlOptions['CURLOPT_USERAGENT'],
-                'Accept-Charset: UTF-8'
-                ));
+            $this->appendRequestHeaders(array(
+                ['User-Agent', $this->curlOptions['CURLOPT_USERAGENT']],
+                ['Accept-Charset', 'UTF-8']
+            ));
         }
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $this->requestHeaders);
+
+        curl_setopt($curl, CURLOPT_HTTPHEADER, self::prepareRequestHeaders($this->requestHeaders));
 
         if ($this->debug){
             var_dump($this->curlOptions);
@@ -510,6 +515,14 @@ class curl {
             }
         }
         return $postFields;
+    }
+
+    private static function prepareRequestHeaders($headers) {
+        $processedHeaders = array();
+        foreach ($headers as $header) {
+            $processedHeaders[] = urlencode($header[0]) . ': ' . urlencode($header[1]);
+        }
+        return $processedHeaders;
     }
 
     private static function isCurlFile($field) {

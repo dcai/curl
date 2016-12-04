@@ -24,6 +24,12 @@ class CurlTest extends PHPUnit_Framework_TestCase {
         $json = $response->json();
         $this->assertEquals(trim($json->files->afile), 'upload test');
     }
+    public function testHeaders() {
+        $http = new \dcai\curl();
+        $http->appendRequestHeader('oauthtoken', 'supersecret');
+        $response = $http->get('http://httpbin.org/headers');
+        $this->assertEquals(trim($response->json()->headers->Oauthtoken), 'supersecret');
+    }
     public function testPostData() {
         $http = new \dcai\curl;
         $processed = $http->makePostFields(array(
