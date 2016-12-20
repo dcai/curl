@@ -372,7 +372,7 @@ class curl {
      * @return array containing all POST parameters  (1 row = 1 POST parameter)
      */
     public function makePostFields($postdata) {
-        if (is_object($postdata) && !self::isCurlFile($value)) {
+        if (is_object($postdata) && !self::isCurlFile($postdata)) {
             $postdata = (array)$postdata;
         }
         $postFields = array();
