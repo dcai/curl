@@ -43,7 +43,7 @@ class curl {
      */
     public function __construct($options = array()) {
         if (!function_exists('curl_init')) {
-            throw new Exception('cURL module must be enabled!');
+            throw new \Exception('cURL module must be enabled!');
         }
         // the options of curl should be init here.
         $this->initializeCurlOptions();
@@ -360,7 +360,7 @@ class curl {
         $response = new CurlHttpResponse($this->info['http_code'], $this->responseHeaders, $httpbody);
 
         if (!empty($this->error)) {
-            throw new Exception($this->error);
+            throw new \Exception($this->error);
         }
         return $response;
     }
