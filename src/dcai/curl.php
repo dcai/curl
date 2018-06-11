@@ -19,6 +19,7 @@ if (!function_exists('curl_file_create')) {
 }
 
 class curl {
+    const VERSION = '0.2.2';
     const DEFAULT_USERPWD = 'anonymous: anonymous@domain.com';
     /** @var bool */
     public $proxy = false;
