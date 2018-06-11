@@ -4,7 +4,7 @@ namespace dcai;
 /**
  * RESTful cURL class
  *
- * This is a wrapper class for curl.
+ * A wrapper class for curl extension.
  *
  * @copyright  Dongsheng Cai {@see http://dongsheng.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
@@ -226,7 +226,7 @@ class curl {
      * @param string $name
      * @param string $value
      */
-    public function AddCurlOption($name, $value) {
+    public function addCurlOption($name, $value) {
         if (stripos($name, 'CURLOPT_') === false) {
             $name = strtoupper('CURLOPT_' . $name);
         }
